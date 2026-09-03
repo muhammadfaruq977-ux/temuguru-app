@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowLeft, Users, Mail, Phone, Shield, User as UserIcon, MapPin } from "lucide-react";
-
+export const dynamic = 'force-dynamic';
 export default async function AdminUsersPage() {
   // Ambil semua data user dari database, diurutkan dari yang terbaru
   const users = await prisma.user.findMany({

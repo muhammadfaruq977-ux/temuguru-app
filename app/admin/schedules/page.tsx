@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Calendar, ArrowLeft, Plus, Clock, User, Trash2 } from "lucide-react";
 import { revalidatePath } from "next/cache";
+export const dynamic = 'force-dynamic';
 
 // Server Action untuk menghapus jadwal jika diperlukan
 async function deleteSchedule(formData: FormData) {

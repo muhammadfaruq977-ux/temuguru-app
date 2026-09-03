@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowLeft, Settings, CheckCircle, ShieldAlert } from "lucide-react";
 import { revalidatePath } from "next/cache";
+export const dynamic = 'force-dynamic';
 
 // Server Action untuk mengubah status COD
 async function toggleCodSetting(formData: FormData) {

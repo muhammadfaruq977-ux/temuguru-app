@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowLeft, Plus, BookOpen, Layers, Trash2 } from "lucide-react";
 import { revalidatePath } from "next/cache";
+export const dynamic = 'force-dynamic';
 
 // Server Action untuk menambah mata pelajaran baru
 async function createSubject(formData: FormData) {

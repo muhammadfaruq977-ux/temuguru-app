@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Plus, Settings, ArrowLeft, CheckCircle, Award, MapPin, Phone, DollarSign, Trash2, Edit3, FileCheck, ExternalLink } from "lucide-react";
 import { revalidatePath } from "next/cache";
+export const dynamic = 'force-dynamic';
 
 // Server Action untuk toggle status COD dengan revalidasi instan ke halaman publik
 async function toggleCodStatus(formData: FormData) {

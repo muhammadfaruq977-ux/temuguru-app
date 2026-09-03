@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Calendar, CheckCircle2, XCircle, ArrowLeft, FileText, ExternalLink, CheckCircle, CreditCard, Banknote } from "lucide-react";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation"; 
+import { redirect } from "next/navigation";
+export const dynamic = 'force-dynamic'; 
 
 async function acceptBooking(formData: FormData) {
   "use server";
