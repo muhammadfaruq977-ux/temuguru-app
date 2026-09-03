@@ -4,9 +4,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-} as any; // 🛑 Tambahkan 'as any' di sini agar TypeScript tidak protes
+} as any;
 
 export default nextConfig;
