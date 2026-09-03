@@ -2,15 +2,27 @@
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
 
-// Konfigurasi web-push dengan kunci VAPID dari .env
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:admin@temuguru.com",
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "",
-  process.env.VAPID_PRIVATE_KEY || ""
-);
+// Ambil kunci VAPID dari environment variables
+const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+const privateVapidKey = process.env.VAPID_PRIVATE_KEY;
+
+// 🛑 Berikan pengaman agar tidak error/crash saat proses build jika kunci belum terbaca
+if (publicVapidKey && privateVapidKey) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:ma.maulana002@gmail.com",
+    publicVapidKey,
+    privateVapidKey
+  );
+}
 
 export async function sendPushNotification(userId: string, title: string, body: string, url: string = "/") {
   try {
+    // Pastikan kunci VAPID tersedia sebelum mencoba mengirim notifikasi
+    if (!publicVapidKey || !privateVapidKey) {
+      console.warn("VAPID keys are missing. Push notification skipped.");
+      return;
+    }
+
     // Ambil semua perangkat/browser yang terdaftar atas nama user tersebut
     const subscriptions = await prisma.pushSubscription.findMany({
       where: { user_id: userId },
