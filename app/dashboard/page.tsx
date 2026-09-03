@@ -105,7 +105,7 @@ async function completeSessionAndReleaseEscrow(formData: FormData) {
     });
     
     // Notif ke Tutor
-    if (booking && booking.tutor) {
+    if (booking && booking.tutor && booking.tutor.email) {
       const tutorUser = await prisma.user.findUnique({ where: { email: booking.tutor.email } });
       if (tutorUser) {
         await sendPushNotification(
