@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+
+enum Role {
+  STUDENT
+  PARENT
+  ADMIN
+}
+
+enum Method {
+  ONLINE
+  OFFLINE
+  BOTH
+}
+
+enum BookingStatus {
+  REQUESTED
+  WAITING_ADMIN
+  WAITING_TUTOR_CONFIRMATION
+  TUTOR_REJECTED
+  ALTERNATIVE_TUTOR
+  TUTOR_CONFIRMED
+  WAITING_PAYMENT
+  PAYMENT_SUCCESS
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  REVIEWED
+  CANCELLED
+  REFUND_REQUESTED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+// --- MODELS ---
+
+model User {
+  id            String           @id @default(uuid())
+  name          String
+  email         String           @unique
+  password_hash String
+  phone         String?
+  address       String?          @db.Text
+  image_url     String?
+  role          Role             @default(STUDENT)
+  
+  profiles      StudentProfile[]
+  bookings      Booking[]
+  reviews       Review[]
+  notifications Notification[]
+
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+  
+  push_subscriptions PushSubscription[] // <--- Tambahkan baris ini
+}
+
+model StudentProfile {
+  id         String    @id @default(uuid())
+  user_id    String
+  user       User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name       String
+  level      String    // e.g., SD, SMP, SMA
+  grade      String    // e.g., Kelas 1, Kelas 10
+  notes      String?   @db.Text
+
+  bookings   Booking[]
+
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+}
+
+model Subject {
+  id         String         @id @default(uuid())
+  name       String         @unique
+  category   String         // e.g., Akademik, Keterampilan
+  
+  tutors     TutorSubject[]
+  bookings   Booking[]
+
+  created_at DateTime       @default(now())
+  updated_at DateTime       @updatedAt
+}
+
+model Tutor {
+  id               String          @id @default(uuid())
+  name             String
+  email            String?          @unique
+  phone_wa         String
+  photo_url        String?
+  bank_account     String?
+  bio              String?         @db.Text
+  education        String
+  experience_years Int             @default(0)
+  price_per_hour   Int             // Dalam Rupiah, misal: 75000
+  location         String          // e.g., Denpasar
+  methods          String          @default("BOTH")
+  ktp_url          String?
+  ijazah_url       String?
+  is_verified      Boolean         @default(false)
+  is_active        Boolean         @default(true)
+  is_cod_enabled   Boolean         @default(false)
+
+  subjects         TutorSubject[]
+  schedules        TutorSchedule[]
+  bookings         Booking[]
+  reviews          Review[]
+
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+}
+
+model TutorSubject {
+  tutor_id   String
+  subject_id String
+  level      String   // e.g., "SD, SMP", "SMA"
+
+  tutor      Tutor    @relation(fields: [tutor_id], references: [id], onDelete: Cascade)
+  subject    Subject  @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@id([tutor_id, subject_id])
+}
+
+model TutorSchedule {
+  id           String  @id @default(uuid())
+  tutor_id     String
+  tutor        Tutor   @relation(fields: [tutor_id], references: [id], onDelete: Cascade)
+  day_of_week  Int     // 0 = Sunday, 1 = Monday, dll.
+  start_time   String  // Format "HH:mm"
+  end_time     String  // Format "HH:mm"
+  is_available Boolean @default(true)
+
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+}
+
+model Booking {
+  id                 String               @id @default(uuid())
+  booking_code       String               @unique // e.g., TG-00125
+  user_id            String
+  student_profile_id String
+  tutor_id           String
+  subject_id         String
+  schedule_id        String?
+  
+  date               DateTime             @db.Date
+  start_time         String               // Format "HH:mm"
+  duration_minutes   Int                  // e.g., 60, 90, 120
+  total_price        Int
+  status             BookingStatus        @default(REQUESTED)
+  method             Method
+  payment_method     String?
+  proof_url          String?
+  location_notes     String?              @db.Text
+  meeting_url        String?
+  payout_status      String? @default("WAITING_ADMIN")
+  payout_receipt     String?
+
+  user               User                 @relation(fields: [user_id], references: [id])
+  student            StudentProfile       @relation(fields: [student_profile_id], references: [id])
+  tutor              Tutor                @relation(fields: [tutor_id], references: [id])
+  subject            Subject              @relation(fields: [subject_id], references: [id])
+  payment            Payment?
+  review             Review?
+  status_history     BookingStatusHistory[]
+
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+}
+
+model BookingStatusHistory {
+  id         String        @id @default(uuid())
+  booking_id String
+  booking    Booking       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  status     BookingStatus
+  notes      String?       @db.Text
+
+  created_at DateTime      @default(now())
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  booking_id    String        @unique
+  booking       Booking       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  provider_ref  String?       // ID dari gateway seperti Midtrans/Xendit
+
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+}
+
+model Setting {
+  id    String @id @default(uuid())
+  key   String @unique
+  value String
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  booking_id String   @unique
+  user_id    String
+  tutor_id   String
+  rating     Int      // 1 to 5
+  comment    String   @db.Text
+
+  booking    Booking  @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id])
+  tutor      Tutor    @relation(fields: [tutor_id], references: [id], onDelete: Cascade)
+
+  created_at DateTime @default(now())
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title      String
+  message    String   @db.Text
+  is_read    Boolean  @default(false)
+
+  created_at DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actor_id    String   // ID Admin yang melakukan aksi
+  action      String   // e.g., ADMIN_CONFIRMED_TUTOR
+  entity_type String
+  entity_id   String
+  old_value   String?  @db.Text
+  new_value   String?  @db.Text
+  ip_address  String?
+
+  created_at  DateTime @default(now())
+}
+
+model PushSubscription {
+  id         String   @id @default(cuid())
+  user_id    String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
