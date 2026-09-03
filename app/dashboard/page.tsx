@@ -171,7 +171,7 @@ async function submitReview(formData: FormData) {
 
     // --- TRIGGER NOTIFIKASI KE TUTOR ---
     const tutor = await prisma.tutor.findUnique({ where: { id: tutor_id } });
-    if (tutor) {
+    if (tutor && tutor.email) {
       const tutorUser = await prisma.user.findUnique({ where: { email: tutor.email } });
       if (tutorUser) {
         await sendPushNotification(
