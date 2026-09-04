@@ -89,6 +89,7 @@ export async function registerTutor(formData: FormData) {
       password_hash: "SUPABASE_AUTH", // Password ditangani aman oleh Supabase
       phone: cleanPhone,
       address: location,
+      role: "TUTOR",
     },
   });
 
