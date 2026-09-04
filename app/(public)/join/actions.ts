@@ -27,16 +27,18 @@ export async function registerTutor(formData: FormData) {
   const cleanEmail = email.toLowerCase().trim();
   const cleanPhone = phone_wa.trim();
 
+  // Cek apakah data sudah ada di tabel Tutor atau User
   const existingTutor = await prisma.tutor.findFirst({
     where: {
-      OR: [
-        { email: cleanEmail },
-        { phone_wa: cleanPhone }
-      ]
-    }
+      OR: [{ email: cleanEmail }, { phone_wa: cleanPhone }],
+    },
+  });
+  
+  const existingUser = await prisma.user.findUnique({
+    where: { email: cleanEmail },
   });
 
-  if (existingTutor) {
+  if (existingTutor || existingUser) {
     return redirect("/join?error=already_exists");
   }
 
@@ -78,6 +80,19 @@ export async function registerTutor(formData: FormData) {
     }
   }
 
+  // 1. Simpan ke tabel User agar terdeteksi di Dashboard Admin (/user)
+  // Catatan: Karena di schema belum ada Role 'TUTOR', defaultnya akan tersimpan sebagai 'STUDENT'
+  await prisma.user.create({
+    data: {
+      name,
+      email: cleanEmail,
+      password_hash: "SUPABASE_AUTH", // Password ditangani aman oleh Supabase
+      phone: cleanPhone,
+      address: location,
+    },
+  });
+
+  // 2. Simpan ke profil Tutor
   await prisma.tutor.create({
     data: {
       name,
@@ -95,4 +110,4 @@ export async function registerTutor(formData: FormData) {
   });
 
   redirect("/join?success=true");
-}
+} 
