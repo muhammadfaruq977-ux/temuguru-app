@@ -23,7 +23,10 @@ export default function JoinTutorForm({ isSuccess, errorParam }: JoinTutorFormPr
 
   const handleAgreeAndSubmit = () => {
     if (formElement) {
-      HTMLFormElement.prototype.submit.call(formElement); // Lanjutkan kirim form setelah klik setuju
+      // Menangkap seluruh data form
+      const formData = new FormData(formElement);
+      // Mengirimkan data langsung ke Server Action Next.js
+      registerTutor(formData);
     }
   };
 
