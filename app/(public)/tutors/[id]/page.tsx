@@ -123,7 +123,7 @@ async function createBooking(formData: FormData) {
       booking_id: booking.id,
       amount: totalPrice,
       status: "PENDING",
-    },import
+    },
   });
 
   // --- TRIGGER NOTIFIKASI OTOMATIS KE HP GURU ---
