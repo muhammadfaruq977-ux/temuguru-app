@@ -31,24 +31,9 @@ export default async function TutorDashboardPage() {
   }
 
   const userEmailClean = user.email.toLowerCase().trim();
-
-  const userEmailClean = user.email.toLowerCase().trim();
   
-  // TAMBAHKAN BARIS DEBUGGING INI:
+  // DEBUGGING LOGIN EMAIL
   console.log("DEBUG LOGIN EMAIL:", userEmailClean);
-  
-  let tutor = await prisma.tutor.findFirst({
-    where: { email: userEmailClean },
-    include: {
-      subjects: { include: { subject: true } },
-      bookings: {
-        include: { subject: true, student: true },
-        orderBy: { created_at: "desc" },
-      },
-    },
-  });
-
-  console.log("DEBUG HASIL CARI TUTOR:", tutor);
 
   // 1. Ambil data tutor dari Prisma berdasarkan email
   let tutor = await prisma.tutor.findFirst({
@@ -63,6 +48,8 @@ export default async function TutorDashboardPage() {
       },
     },
   });
+
+  console.log("DEBUG HASIL CARI TUTOR:", tutor);
 
   // 2. JIKA PROFIL TUTOR BELUM ADA, BUATKAN OTOMATIS DENGAN NOMOR WA UNIK (MENCEGAH UNIQUE CONSTRAINT ERROR)
   if (!tutor) {
