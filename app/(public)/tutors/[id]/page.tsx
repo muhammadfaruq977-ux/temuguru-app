@@ -123,7 +123,7 @@ async function createBooking(formData: FormData) {
       booking_id: booking.id,
       amount: totalPrice,
       status: "PENDING",
-    },
+    },import
   });
 
   // --- TRIGGER NOTIFIKASI OTOMATIS KE HP GURU ---
@@ -157,6 +157,20 @@ export default async function TutorDetailPage({
   const resolvedParams = await params;
   const resolvedSearch = await searchParams;
   const id = resolvedParams.id;
+  const tutorId = resolvedParams.id;
+
+  // --- TAMBAHKAN KODE INI UNTUK TESTING ---
+  if (tutorId === "dashboard") {
+    return (
+      <div className="p-20 text-center">
+        <h1 className="text-4xl font-black text-red-600">
+          TERTANGKAP! URL DASHBOARD NYASAR KESINI!
+        </h1>
+        <p>Next.js gagal mendeteksi folder dashboard aslinya.</p>
+      </div>
+    );
+  }
+  // ----------------------------------------
   const hasError = resolvedSearch.error === "cod_disabled";
 
   const tutor = await prisma.tutor.findUnique({
