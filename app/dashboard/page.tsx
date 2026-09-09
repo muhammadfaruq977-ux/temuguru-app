@@ -23,42 +23,53 @@ async function handleLogout() {
   redirect("/login");
 }
 
-// FUNGSI UPLOAD BUKTI PEMBAYARAN
+// FUNGSI UPLOAD BUKTI PEMBAYARAN (SUDAH DIPERBAIKI ANTI-CRASH)
 async function uploadProof(formData: FormData) {
   "use server";
   const bookingId = formData.get("bookingId") as string;
   const file = formData.get("proofImage") as File; 
   
-  if (!bookingId || !file || file.size === 0) return;
+  // Proteksi: Pastikan file valid dan berformat File (bukan string)
+  if (!bookingId || !file || typeof file === "string" || file.size === 0) return;
 
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
+  let fileUrl = "";
 
-  const uploadDir = join(process.cwd(), "public/uploads");
+  // 1. Coba proses dan simpan file fisik
+  try {
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
 
-  if (!existsSync(uploadDir)) {
-    await mkdir(uploadDir, { recursive: true });
+    // Gunakan pemisah OS yang aman
+    const uploadDir = join(process.cwd(), "public", "uploads");
+
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
+
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const extension = file.name ? file.name.split(".").pop() : "jpg";
+    const fileName = `bukti-${uniqueSuffix}.${extension}`;
+    
+    const filePath = join(uploadDir, fileName);
+    await writeFile(filePath, buffer);
+
+    fileUrl = `/uploads/${fileName}`;
+  } catch (error) {
+    console.error("Gagal menyimpan file gambar ke server:", error);
+    return; // Berhenti agar database tidak ter-update jika gambar gagal disimpan
   }
 
-  const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-  const extension = file.name.split(".").pop();
-  const fileName = `bukti-${uniqueSuffix}.${extension}`;
-  
-  const filePath = join(uploadDir, fileName);
-
-  await writeFile(filePath, buffer);
-
-  const fileUrl = `/uploads/${fileName}`;
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: { 
-      location_notes: fileUrl,
-      status: "WAITING_ADMIN" 
-    },
-  });
-
-  // --- TRIGGER NOTIFIKASI KE ADMIN ---
+  // 2. Coba update database dan kirim notifikasi
   try {
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { 
+        location_notes: fileUrl,
+        status: "WAITING_ADMIN" 
+      },
+    });
+
+    // --- TRIGGER NOTIFIKASI KE ADMIN ---
     const admins = await prisma.user.findMany({ where: { role: "ADMIN" } });
     for (const admin of admins) {
       await sendPushNotification(
@@ -69,10 +80,10 @@ async function uploadProof(formData: FormData) {
       );
     }
   } catch (error) {
-    console.error("Gagal kirim notif ke admin:", error);
+    console.error("Gagal update database atau kirim notif admin:", error);
   }
-  // -----------------------------------
 
+  // Wajib revalidatePath dan redirect DI LUAR blok try-catch agar fungsi pindah halaman tidak error
   revalidatePath("/dashboard");
   revalidatePath("/admin/bookings");
   redirect("/dashboard");
@@ -386,7 +397,8 @@ export default async function StudentDashboardPage() {
                           </div>
                         </div>
 
-                        <form action={uploadProof} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center gap-3">
+                        {/* ATRIBUT encType="multipart/form-data" WAJIB ADA AGAR GAMBAR TIDAK ERROR */}
+                        <form action={uploadProof} encType="multipart/form-data" className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center gap-3">
                           <input type="hidden" name="bookingId" value={booking.id} />
                           <div className="flex-1 w-full space-y-1.5">
                             <label className="text-xs font-black text-slate-700 uppercase tracking-wider block">Upload Bukti Transfer Pembayaran</label>

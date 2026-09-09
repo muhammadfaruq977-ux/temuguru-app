@@ -109,7 +109,7 @@ export default async function HomePage() {
         <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm font-bold">
           <Link 
             href="/tutors/login" 
-            className="hidden xl:flex items-center gap-1.5 text-[13px] font-bold text-slate-500 hover:text-blue-600 transition-all"
+            className="flex items-center gap-1.5 text-[13px] font-bold text-slate-500 hover:text-blue-600 transition-all"
           >
             Masuk sebagai Guru
           </Link>
@@ -327,13 +327,13 @@ export default async function HomePage() {
         </div>
       </div>
 
-      {/* CSS Animasi Marquee */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      {/* CSS Animasi Marquee yang Aman dari Parser JSX */}
+      <style>{`
         @keyframes marquee {
           0% { transform: translateX(0%); }
           100% { transform: translateX(-50%); }
         }
-      `}} />
+      `}</style>
 
       {/* SEKSI INFORMASI: KEUNGGULAN PLATFORM */}
       <section className="max-w-6xl mx-auto px-6 py-20 md:py-28 space-y-16 relative z-10">

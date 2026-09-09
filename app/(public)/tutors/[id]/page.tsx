@@ -6,6 +6,7 @@ import { Star, BookOpen, CheckCircle, AlertCircle } from "lucide-react";
 
 // IMPORT FUNGSI PENGIRIM NOTIFIKASI
 import { sendPushNotification } from "@/lib/send-push";
+import { SubmitButton } from "./SubmitButton";
 
 async function createBooking(formData: FormData) {
   "use server";
@@ -144,7 +145,7 @@ async function createBooking(formData: FormData) {
   }
   // --------------------------------------------
 
-  redirect("/dashboard");
+  redirect(`/success?code=${bookingCode}`);
 }
 
 export default async function TutorDetailPage({ 
@@ -367,9 +368,9 @@ export default async function TutorDetailPage({
               )}
             </div>
 
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-600/20 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer hover:-translate-y-0.5 mt-2">
-              Pesan Sesi Sekarang <CheckCircle className="w-4 h-4" />
-            </button>
+            <div className="mt-2">
+              <SubmitButton />
+            </div>
           </form>
         </div>
 
