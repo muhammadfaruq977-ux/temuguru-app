@@ -5,10 +5,37 @@ import { ArrowLeft, Save, User, CreditCard, DollarSign, AlertCircle, FileText, M
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
 
-// Modul untuk menyimpan file fisik ke folder public/uploads
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
+// 1. Import library Cloudinary (Menggantikan fs/promises lokal)
+import { v2 as cloudinary } from "cloudinary";
+
+// 2. Konfigurasi Cloudinary (Pastikan env variables diisi di Vercel/lokal)
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Helper Function: Mengubah file form menjadi buffer dan mengunggah ke Cloudinary
+async function uploadToCloudinary(file: File, folderName: string): Promise<string | null> {
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+
+  return new Promise((resolve, reject) => {
+    // resource_type: "auto" memungkinkan upload gambar (KTP/Foto) maupun dokumen (PDF Ijazah)
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder: folderName, resource_type: "auto" },
+      (error, result) => {
+        if (error) {
+          console.error("Gagal upload ke Cloudinary:", error);
+          resolve(null);
+        } else {
+          resolve(result?.secure_url || null);
+        }
+      }
+    );
+    uploadStream.end(buffer);
+  });
+}
 
 async function updateProfile(formData: FormData) {
   "use server";
@@ -44,54 +71,22 @@ async function updateProfile(formData: FormData) {
   let ktpUrl = currentTutor.ktp_url;
   let ijazahUrl = currentTutor.ijazah_url;
 
-  const uploadDir = join(process.cwd(), "public/uploads");
-  if (!existsSync(uploadDir)) {
-    await mkdir(uploadDir, { recursive: true });
-  }
-
-  // 1. Simpan Foto Profil
+  // 1. Simpan Foto Profil ke Cloudinary
   if (photoFile && photoFile.size > 0 && photoFile.name !== "undefined") {
-    try {
-      const bytes = await photoFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = photoFile.name.split(".").pop();
-      const fileName = `profile-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      photoUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload foto profil:", error);
-    }
+    const uploadedUrl = await uploadToCloudinary(photoFile, "temuguru/profiles");
+    if (uploadedUrl) photoUrl = uploadedUrl;
   }
 
-  // 2. Simpan File KTP
+  // 2. Simpan File KTP ke Cloudinary
   if (ktpFile && ktpFile.size > 0 && ktpFile.name !== "undefined") {
-    try {
-      const bytes = await ktpFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = ktpFile.name.split(".").pop();
-      const fileName = `ktp-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      ktpUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload KTP:", error);
-    }
+    const uploadedUrl = await uploadToCloudinary(ktpFile, "temuguru/ktp");
+    if (uploadedUrl) ktpUrl = uploadedUrl;
   }
 
-  // 3. Simpan File Ijazah
+  // 3. Simpan File Ijazah ke Cloudinary
   if (ijazahFile && ijazahFile.size > 0 && ijazahFile.name !== "undefined") {
-    try {
-      const bytes = await ijazahFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = ijazahFile.name.split(".").pop();
-      const fileName = `ijazah-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      ijazahUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload Ijazah:", error);
-    }
+    const uploadedUrl = await uploadToCloudinary(ijazahFile, "temuguru/ijazah");
+    if (uploadedUrl) ijazahUrl = uploadedUrl;
   }
 
   await prisma.tutor.updateMany({
