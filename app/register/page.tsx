@@ -35,10 +35,10 @@ async function registerUser(formData: FormData) {
     throw new Error(authError.message);
   }
 
-  let imageUrl = null;
+  let finalPhotoUrl = null;
 
-  // 2. Upload foto profil siswa ke Supabase Storage (Bypass EROFS Vercel)
-  if (file && typeof file !== "string" && file.size > 0) {
+  // 2. Upload foto profil ke Supabase Storage (Bypass EROFS Vercel)
+  if (file && typeof file !== "string" && file.size > 0 && file.name !== "undefined") {
     try {
       const supabaseAdmin = createSupabaseAdmin(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,28 +52,34 @@ async function registerUser(formData: FormData) {
       const extension = file.name ? file.name.split(".").pop() : "jpg";
       const fileName = `user-${uniqueSuffix}.${extension}`;
 
+      // PERUBAHAN 1: Nama bucket disesuaikan dengan yang ada di Supabase
+      const BUCKET_NAME = "tutors-photo";
+
       const { error: uploadError } = await supabaseAdmin.storage
-        .from("bukti-transfer") // Menggunakan bucket yang sama atau buat bucket khusus 'avatars'
+        .from(BUCKET_NAME) 
         .upload(fileName, buffer, {
           contentType: file.type || "image/jpeg",
           cacheControl: "3600",
           upsert: false,
         });
 
-      if (!uploadError) {
+      if (uploadError) {
+        console.error("❌ GAGAL UPLOAD FOTO KE STORAGE:", uploadError.message);
+      } else {
         const { data: publicUrlData } = supabaseAdmin.storage
-          .from("bukti-transfer")
+          .from(BUCKET_NAME)
           .getPublicUrl(fileName);
 
-        imageUrl = publicUrlData.publicUrl;
+        finalPhotoUrl = publicUrlData.publicUrl;
+        console.log("✅ FOTO BERHASIL DIUPLOAD:", finalPhotoUrl);
       }
     } catch (error) {
-      console.error("Gagal mengunggah foto profil siswa ke Supabase:", error);
+      console.error("❌ ERROR SERVER SAAT UPLOAD:", error);
     }
   }
 
   try {
-    // 3. Simpan data user ke database Prisma beserta profil siswa
+    // 3. Simpan data user ke database Prisma beserta profil
     await prisma.user.create({
       data: {
         name,
@@ -82,7 +88,8 @@ async function registerUser(formData: FormData) {
         address,      
         password_hash: password, 
         role: "STUDENT", 
-        image_url: imageUrl,
+        // PERUBAHAN 2: Menyesuaikan nama kolom dengan schema prisma Anda
+        photo_url: finalPhotoUrl, 
         
         profiles: {
           create: {
@@ -95,7 +102,7 @@ async function registerUser(formData: FormData) {
     });
 
   } catch (error) {
-    console.error("GAGAL MENYIMPAN USER KE DATABASE PRISMA:", error);
+    console.error("❌ GAGAL MENYIMPAN USER KE DATABASE PRISMA:", error);
     throw error;
   }
 
