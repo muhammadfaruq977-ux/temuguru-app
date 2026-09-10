@@ -165,7 +165,6 @@ export default async function TutorDetailPage({
   const tutor = await prisma.tutor.findUnique({
     where: { id },
     include: {
-      user: true,
       subjects: { include: { subject: true } },
       schedules: true,
     },
