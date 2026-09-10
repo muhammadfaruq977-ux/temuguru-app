@@ -103,7 +103,10 @@ export default async function AdminBookingsPage() {
               // PERBAIKAN: Masukkan status COMPLETED agar tombol Terima Sesi disembunyikan
               const isConfirmed = booking.status === "TUTOR_CONFIRMED" || isPaid || booking.status === "COMPLETED";
               const isCancelled = booking.status === "CANCELLED";
-              const hasProofImage = booking.location_notes && booking.location_notes.startsWith("/uploads/");
+              
+              // PERBAIKAN: Deteksi URL dari Supabase Storage (http) atau lokal (/uploads/)
+              const hasProofImage = booking.location_notes && (booking.location_notes.startsWith("http") || booking.location_notes.startsWith("/uploads/"));
+              
               const isCod = booking.payment_method === "COD_CASH";
 
               return (
