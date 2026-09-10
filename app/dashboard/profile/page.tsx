@@ -1,135 +1,61 @@
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Save, User, CreditCard, DollarSign, AlertCircle, FileText, MapPin, GraduationCap, ShieldCheck, FileCheck, Upload, ExternalLink, Camera } from "lucide-react";
+import { ArrowLeft, Save, User as UserIcon, Mail, Phone, GraduationCap, BookOpen, MapPin } from "lucide-react";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/utils/supabase/server";
 
-// Modul untuk menyimpan file fisik ke folder public/uploads
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
-
-async function updateProfile(formData: FormData) {
+async function updateStudentProfile(formData: FormData) {
   "use server";
-  
-  // 1. Cek sesi login aktif via Supabase Auth
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-
-  if (error || !user || !user.email) {
-    return redirect("/tutors/login");
-  }
-
-  // 2. Cari tutor di Prisma berdasarkan email akun yang sedang login
-  const currentTutor = await prisma.tutor.findFirst({
-    where: { email: user.email.toLowerCase().trim() },
-  });
-  
-  if (!currentTutor) return;
+  const cookieStore = await cookies();
+  const userEmail = cookieStore.get("user_email")?.value;
+  if (!userEmail) return;
 
   const name = formData.get("name") as string;
-  const bio = formData.get("bio") as string;
-  const location = formData.get("location") as string;
-  const education = formData.get("education") as string;
-  const bank_account = formData.get("bank_account") as string;
-  const price_per_hour = parseInt(formData.get("price_per_hour") as string) || 0;
+  const phone = formData.get("phone") as string;
+  const address = formData.get("address") as string; // <-- Hanya menangkap Alamat
+  const level = formData.get("level") as string;
+  const grade = formData.get("grade") as string;
+  const notes = formData.get("notes") as string;
 
-  // Tangkap file dari input type="file"
-  const photoFile = formData.get("photoFile") as File;
-  const ktpFile = formData.get("ktpFile") as File;
-  const ijazahFile = formData.get("ijazahFile") as File;
+  // Cari user berdasarkan email
+  const user = await prisma.user.findUnique({
+    where: { email: userEmail },
+  });
+  if (!user) return;
 
-  let photoUrl = currentTutor.photo_url;
-  let ktpUrl = currentTutor.ktp_url;
-  let ijazahUrl = currentTutor.ijazah_url;
+  // Update data User utama (termasuk alamat)
+  await prisma.user.update({
+    where: { email: userEmail },
+    data: { name, phone, address },
+  });
 
-  const uploadDir = join(process.cwd(), "public/uploads");
-  if (!existsSync(uploadDir)) {
-    await mkdir(uploadDir, { recursive: true });
-  }
+  // Update atau buat StudentProfile terkait
+  await prisma.studentProfile.updateMany({
+    where: { user_id: user.id },
+    data: { name, level, grade, notes },
+  });
 
-  // 1. Simpan Foto Profil
-  if (photoFile && photoFile.size > 0 && photoFile.name !== "undefined") {
-    try {
-      const bytes = await photoFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = photoFile.name.split(".").pop();
-      const fileName = `profile-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      photoUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload foto profil:", error);
-    }
-  }
+  revalidatePath("/dashboard/profile");
+  redirect("/dashboard");
+}
 
-  // 2. Simpan File KTP
-  if (ktpFile && ktpFile.size > 0 && ktpFile.name !== "undefined") {
-    try {
-      const bytes = await ktpFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = ktpFile.name.split(".").pop();
-      const fileName = `ktp-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      ktpUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload KTP:", error);
-    }
-  }
+export default async function StudentProfilePage() {
+  const cookieStore = await cookies();
+  const userEmail = cookieStore.get("user_email")?.value;
 
-  // 3. Simpan File Ijazah
-  if (ijazahFile && ijazahFile.size > 0 && ijazahFile.name !== "undefined") {
-    try {
-      const bytes = await ijazahFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = ijazahFile.name.split(".").pop();
-      const fileName = `ijazah-${uniqueSuffix}.${extension}`;
-      await writeFile(join(uploadDir, fileName), buffer);
-      ijazahUrl = `/uploads/${fileName}`;
-    } catch (error) {
-      console.error("Gagal upload Ijazah:", error);
-    }
-  }
+  if (!userEmail) redirect("/login");
 
-  await prisma.tutor.updateMany({
-    where: { email: user.email.toLowerCase().trim() },
-    data: {
-      name,
-      bio,
-      location,
-      education,
-      bank_account,
-      price_per_hour,
-      photo_url: photoUrl,
-      ktp_url: ktpUrl,
-      ijazah_url: ijazahUrl,
+  const studentUser = await prisma.user.findUnique({
+    where: { email: userEmail },
+    include: {
+      profiles: true,
     },
   });
 
-  revalidatePath("/tutors/dashboard");
-  redirect("/tutors/dashboard");
-}
+  if (!studentUser) redirect("/login");
 
-export default async function TutorProfilePage() {
-  // 1. Cek sesi login aktif via Supabase Auth
-  const supabase = await createClient();
-  const { data: { user }, error } = await supabase.auth.getUser();
-
-  if (error || !user || !user.email) {
-    redirect("/tutors/login");
-  }
-
-  // 2. Ambil data tutor dari Prisma berdasarkan email
-  const tutor = await prisma.tutor.findFirst({
-    where: { email: user.email.toLowerCase().trim() },
-  });
-
-  if (!tutor) {
-    redirect("/tutors/login?error=profile_not_found");
-  }
+  const studentProfile = studentUser.profiles[0];
 
   return (
     <div className="bg-slate-50 min-h-screen font-sans text-slate-800 selection:bg-blue-600 selection:text-white overflow-x-hidden relative pb-20">
@@ -143,165 +69,131 @@ export default async function TutorProfilePage() {
         
         {/* HEADER NAVIGASI */}
         <div className="space-y-1">
-          <Link href="/tutors/dashboard" className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 transition-all shadow-2xs mb-4">
-            <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 transition-all shadow-2xs mb-4">
+            <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard Siswa
           </Link>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Pengaturan Profil & Verifikasi</h1>
-          <p className="text-xs text-slate-500 font-medium">Lengkapi data diri dan unggah berkas verifikasi Anda.</p>
+          <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Pengaturan Profil & Lokasi Siswa</h1>
+          <p className="text-xs text-slate-500 font-medium">Kelola informasi akun, data akademik, dan alamat tujuan les privat.</p>
         </div>
 
-        {/* STATUS AKUN */}
-        {tutor.is_verified ? (
-          <div className="bg-emerald-50/90 backdrop-blur-md border border-emerald-200 rounded-2xl p-4 flex items-center gap-3 text-emerald-900 text-xs font-bold shadow-2xs">
-            <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>Selamat! Akun Anda telah Terverifikasi oleh Admin Temuguru. Profil Anda tampil di pencarian publik.</span>
-          </div>
-        ) : (
-          <div className="bg-amber-50/90 backdrop-blur-md border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-950 text-xs font-medium shadow-2xs">
-            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-black">Akun Belum Terverifikasi</p>
-              <p className="text-amber-900">Pilih dan unggah foto KTP & Ijazah Anda langsung dari HP/Laptop di bawah ini agar Admin dapat menyetujui akun Anda.</p>
-            </div>
-          </div>
-        )}
-
-        {/* FORM UPLOAD MULTIPART */}
-        <form action={updateProfile} className="space-y-6">
+        {/* FORM UPDATE PROFIL */}
+        <form action={updateStudentProfile} className="space-y-6">
           
-          {/* SEKSI 1: UPLOAD DOKUMEN VERIFIKASI (KTP & IJAZAH) */}
+          {/* INFORMASI AKUN */}
           <div className="bg-white/90 backdrop-blur-md border border-slate-100 rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/5 space-y-6">
-            <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-              <FileCheck className="w-5 h-5 text-blue-600" />
-              <h2 className="text-lg font-black text-slate-900">Upload Dokumen Verifikasi (KTP & Ijazah)</h2>
-            </div>
+            <h2 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3">Informasi Akun</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
-              {/* Tombol Upload KTP */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5 text-blue-600" /> Foto KTP (Kartu Tanda Penduduk)
+              <div>
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                  <UserIcon className="w-3.5 h-3.5 text-blue-600" /> Nama Lengkap
                 </label>
-
-                {tutor.ktp_url && (
-                  <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl shadow-2xs">
-                    <span className="flex items-center gap-1.5"><FileCheck className="w-4 h-4 text-emerald-600" /> KTP Sudah Terunggah</span>
-                    <a href={tutor.ktp_url} target="_blank" rel="noreferrer" className="underline font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1">
-                      Lihat <ExternalLink className="w-3 h-3"/>
-                    </a>
-                  </div>
-                )}
-
                 <input 
-                  type="file" 
-                  name="ktpFile" 
-                  accept="image/*,.pdf" 
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer bg-slate-50 border border-slate-200 rounded-2xl"
+                  type="text" 
+                  name="name" 
+                  defaultValue={studentUser.name} 
+                  required 
+                  className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" 
                 />
-                <p className="text-[10px] text-slate-400 font-medium">Pilih file foto KTP dari galeri/HP Anda.</p>
               </div>
 
-              {/* Tombol Upload Ijazah */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5 text-blue-600" /> Foto Ijazah / Sertifikat
+              <div>
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                  <Mail className="w-3.5 h-3.5 text-blue-600" /> Email (Tidak dapat diubah)
                 </label>
-
-                {tutor.ijazah_url && (
-                  <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl shadow-2xs">
-                    <span className="flex items-center gap-1.5"><FileCheck className="w-4 h-4 text-emerald-600" /> Ijazah Sudah Terunggah</span>
-                    <a href={tutor.ijazah_url} target="_blank" rel="noreferrer" className="underline font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1">
-                      Lihat <ExternalLink className="w-3 h-3"/>
-                    </a>
-                  </div>
-                )}
-
                 <input 
-                  type="file" 
-                  name="ijazahFile" 
-                  accept="image/*,.pdf" 
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer bg-slate-50 border border-slate-200 rounded-2xl"
+                  type="email" 
+                  defaultValue={studentUser.email} 
+                  disabled 
+                  className="w-full text-sm font-medium p-3.5 border border-slate-200 rounded-2xl bg-slate-100 text-slate-500 cursor-not-allowed" 
                 />
-                <p className="text-[10px] text-slate-400 font-medium">Pilih file foto Ijazah dari galeri/HP Anda.</p>
               </div>
 
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                  <Phone className="w-3.5 h-3.5 text-blue-600" /> Nomor Telepon / WhatsApp
+                </label>
+                <input 
+                  type="text" 
+                  name="phone" 
+                  defaultValue={studentUser.phone || ""} 
+                  className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" 
+                />
+              </div>
             </div>
           </div>
 
-          {/* SEKSI 2: BIODATA & PROFIL SINGKAT */}
+          {/* INFORMASI LOKASI & ALAMAT (UNTUK GURU) */}
           <div className="bg-white/90 backdrop-blur-md border border-slate-100 rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/5 space-y-6">
-            <h2 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3">Biodata & Latar Belakang</h2>
+            <h2 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-blue-600" /> Alamat Les Privat
+            </h2>
+            <p className="text-xs text-slate-500 -mt-2 font-medium">
+              Alamat ini akan digunakan oleh admin untuk diberikan kepada guru yang berkunjung ke rumah Anda.
+            </p>
+
+            <div>
+              <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                Alamat Lengkap (Nama Jalan, No. Rumah, RT/RW, Patokan)
+              </label>
+              <textarea 
+                name="address" 
+                defaultValue={studentUser.address || ""} 
+                rows={3} 
+                placeholder="Contoh: Jl. Melati No. 12, RT 03/RW 04, Sidoarjo (Depan masjid al-ikhlas)" 
+                className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all"
+              ></textarea>
+            </div>
+          </div>
+
+          {/* DETAIL AKADEMIK SISWA */}
+          <div className="bg-white/90 backdrop-blur-md border border-slate-100 rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/5 space-y-6">
+            <h2 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3">Detail Akademik Siswa</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <User className="w-3.5 h-3.5 text-blue-600" /> Nama Lengkap
-                </label>
-                <input type="text" name="name" defaultValue={tutor.name} required className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <Camera className="w-3.5 h-3.5 text-blue-600" /> Ganti Foto Profil
+                  <GraduationCap className="w-3.5 h-3.5 text-blue-600" /> Jenjang (Level)
                 </label>
                 <input 
-                  type="file" 
-                  name="photoFile" 
-                  accept="image/*" 
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-3 file:px-4 file:rounded-2xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-white hover:file:bg-slate-900 cursor-pointer bg-slate-50 border border-slate-200 rounded-2xl"
+                  type="text" 
+                  name="level" 
+                  defaultValue={studentProfile?.level || ""} 
+                  placeholder="Contoh: SD, SMP, SMA" 
+                  className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" 
                 />
               </div>
 
               <div>
                 <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600" /> Domisili / Kota
+                  <BookOpen className="w-3.5 h-3.5 text-blue-600" /> Kelas
                 </label>
-                <input type="text" name="location" defaultValue={tutor.location || ""} placeholder="Contoh: Sidoarjo" className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <GraduationCap className="w-3.5 h-3.5 text-blue-600" /> Pendidikan Terakhir
-                </label>
-                <input type="text" name="education" defaultValue={tutor.education || ""} placeholder="Contoh: S1 Pendidikan Bahasa Arab" className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" />
+                <input 
+                  type="text" 
+                  name="grade" 
+                  defaultValue={studentProfile?.grade || ""} 
+                  placeholder="Contoh: Kelas 5, Kelas 10" 
+                  className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" 
+                />
               </div>
             </div>
 
             <div>
               <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                <FileText className="w-3.5 h-3.5 text-blue-600" /> Bio / Deskripsi Singkat
+                Catatan Tambahan Belajar
               </label>
-              <textarea name="bio" defaultValue={tutor.bio || ""} rows={4} placeholder="Ceritakan pengalaman mengajar..." className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all resize-none"></textarea>
-            </div>
-          </div>
-
-          {/* SEKSI 3: TARIF & REKENING */}
-          <div className="bg-white/90 backdrop-blur-md border border-slate-100 rounded-[2.5rem] p-6 md:p-10 shadow-xl shadow-blue-900/5 space-y-6">
-            <h2 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3">Tarif & Rekening Pencairan</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <DollarSign className="w-3.5 h-3.5 text-blue-600" /> Tarif Mengajar (Per Jam)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">Rp</span>
-                  <input type="number" name="price_per_hour" defaultValue={tutor.price_per_hour} required min="0" className="w-full text-sm font-black p-3.5 pl-12 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-                  <CreditCard className="w-3.5 h-3.5 text-blue-600" /> Rekening Bank
-                </label>
-                <input type="text" name="bank_account" defaultValue={tutor.bank_account || ""} placeholder="Contoh: BCA 554554 a.n Nama" required className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" />
-              </div>
+              <textarea 
+                name="notes" 
+                defaultValue={studentProfile?.notes || ""} 
+                rows={3} 
+                placeholder="Catatan khusus atau kelemahan mata pelajaran..." 
+                className="w-full text-sm font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none resize-none transition-all"
+              ></textarea>
             </div>
           </div>
 
           <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-4 rounded-2xl shadow-xl shadow-blue-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer hover:-translate-y-0.5">
-            <Save className="w-5 h-5" /> Simpan Perubahan Profil & Berkas
+            <Save className="w-5 h-5" /> Simpan Perubahan Profil & Lokasi
           </button>
 
         </form>
@@ -309,7 +201,7 @@ export default async function TutorProfilePage() {
 
       {/* FLOATING WHATSAPP BUTTON (POJOK KANAN BAWAH) */}
       <a 
-        href="https://wa.me/6281217368545?text=Halo%20Admin%20Temuguru,%20saya%20ingin%20bertanya%20mengenai%20pengaturan%20profil%20pengajar." 
+        href="https://wa.me/6281217368545?text=Halo%20Admin%20Temuguru,%20saya%20ingin%20bertanya%20mengenai%20layanan%20les%20privat." 
         target="_blank" 
         rel="noopener noreferrer" 
         aria-label="Hubungi Admin via WhatsApp"
