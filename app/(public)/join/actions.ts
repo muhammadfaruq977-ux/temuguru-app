@@ -3,9 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 
 export async function registerTutor(formData: FormData) {
   const name = formData.get("name") as string;
@@ -56,32 +54,47 @@ export async function registerTutor(formData: FormData) {
     return redirect(`/join?error=${encodeURIComponent(authError.message)}`);
   }
 
-  let photoUrl = null;
+  let finalPhotoUrl = null;
 
-  if (file && file.size > 0) {
+  // Upload foto profil ke Supabase Storage (Bypass EROFS Vercel)
+  if (file && file.size > 0 && file.name !== "undefined") {
     try {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
+      const supabaseAdmin = createSupabaseAdmin(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
 
-      const uploadDir = join(process.cwd(), "public/uploads");
-      if (!existsSync(uploadDir)) {
-        await mkdir(uploadDir, { recursive: true });
-      }
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
       const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = file.name.split(".").pop();
+      const extension = file.name ? file.name.split(".").pop() : "jpg";
       const fileName = `tutor-${uniqueSuffix}.${extension}`;
-      const filePath = join(uploadDir, fileName);
+      const BUCKET_NAME = "tutors-photo";
 
-      await writeFile(filePath, buffer);
-      photoUrl = `/uploads/${fileName}`;
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(BUCKET_NAME)
+        .upload(fileName, buffer, {
+          contentType: file.type || "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (!uploadError) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(fileName);
+
+        finalPhotoUrl = publicUrlData.publicUrl;
+      } else {
+        console.error("Gagal upload foto ke Supabase Storage:", uploadError.message);
+      }
     } catch (error) {
       console.error("Gagal mengunggah foto profil guru:", error);
     }
   }
 
-  // 1. Simpan ke tabel User agar terdeteksi di Dashboard Admin (/user)
-  // Catatan: Karena di schema belum ada Role 'TUTOR', defaultnya akan tersimpan sebagai 'STUDENT'
+  // 1. Simpan ke tabel User (menggunakan kolom image_url)
   await prisma.user.create({
     data: {
       name,
@@ -90,10 +103,11 @@ export async function registerTutor(formData: FormData) {
       phone: cleanPhone,
       address: location,
       role: "TUTOR",
+      image_url: finalPhotoUrl,
     },
   });
 
-  // 2. Simpan ke profil Tutor
+  // 2. Simpan ke profil Tutor (menggunakan kolom photo_url)
   await prisma.tutor.create({
     data: {
       name,
@@ -104,11 +118,11 @@ export async function registerTutor(formData: FormData) {
       price_per_hour,
       experience_years,
       bio: bio || "",
-      photo_url: photoUrl,
+      photo_url: finalPhotoUrl,
       bank_account: bank_account,
       is_verified: false,
     },
   });
 
   redirect("/join?success=true");
-} 
+}

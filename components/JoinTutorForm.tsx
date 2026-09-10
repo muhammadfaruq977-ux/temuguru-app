@@ -90,7 +90,7 @@ export default function JoinTutorForm({ isSuccess, errorParam }: JoinTutorFormPr
               </div>
             </div>
           ) : (
-            <form action={registerTutor} onSubmit={handleSubmitClick} className="space-y-4">
+            <form action={registerTutor} onSubmit={handleSubmitClick} encType="multipart/form-data" className="space-y-4">
               {errorParam && (
                 <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-2xs">
                   <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
