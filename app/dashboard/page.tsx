@@ -21,7 +21,7 @@ async function handleLogout() {
   redirect("/login");
 }
 
-// FUNGSI UPLOAD BUKTI KE SUPABASE STORAGE (COCOK UNTUK VERCEL)
+// FUNGSI UPLOAD BUKTI KE SUPABASE STORAGE (ROBUST & BYPASS RLS)
 async function uploadProof(formData: FormData) {
   "use server";
   
@@ -35,21 +35,25 @@ async function uploadProof(formData: FormData) {
   let fileUrl = "";
 
   try {
-    // 1. Inisialisasi Supabase Client
+    // PENTING: Gunakan SUPABASE_SERVICE_ROLE_KEY di server-side agar lolos dari RLS Policy
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 2. Siapkan File untuk Upload
+    // Ubah file menjadi ArrayBuffer lalu Buffer agar aman dibaca server Vercel
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const extension = file.name ? file.name.split(".").pop() : "jpg";
     const fileName = `bukti-${uniqueSuffix}.${extension}`;
     
-    // 3. Upload File ke Supabase Storage (Bucket: bukti-transfer)
+    // Upload menggunakan buffer
     const { data, error } = await supabase.storage
       .from("bukti-transfer")
-      .upload(fileName, file, {
+      .upload(fileName, buffer, {
+        contentType: file.type || "image/jpeg",
         cacheControl: "3600",
         upsert: false,
       });
@@ -59,7 +63,7 @@ async function uploadProof(formData: FormData) {
       redirect("/dashboard?error=gagal_upload_storage");
     }
 
-    // 4. Dapatkan URL Publik
+    // Dapatkan URL Publik
     const { data: publicUrlData } = supabase.storage
       .from("bukti-transfer")
       .getPublicUrl(fileName);
@@ -71,7 +75,7 @@ async function uploadProof(formData: FormData) {
     redirect("/dashboard?error=server_error_upload");
   }
 
-  // 5. Update Database dengan URL Publik Supabase
+  // Update Database dengan URL Publik Supabase
   try {
     await prisma.booking.update({
       where: { id: bookingId },
@@ -81,7 +85,7 @@ async function uploadProof(formData: FormData) {
       },
     });
 
-    // --- TRIGGER NOTIFIKASI KE ADMIN ---
+    // Kirim Notifikasi ke Admin
     const admins = await prisma.user.findMany({ where: { role: "ADMIN" } });
     for (const admin of admins) {
       await sendPushNotification(
@@ -95,7 +99,6 @@ async function uploadProof(formData: FormData) {
     console.error("Gagal update database atau kirim notif admin:", error);
   }
 
-  // 6. Selesai
   revalidatePath("/dashboard");
   revalidatePath("/admin/bookings");
   redirect("/dashboard");
