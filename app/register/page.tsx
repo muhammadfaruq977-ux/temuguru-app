@@ -3,11 +3,7 @@ import { ArrowLeft, UserPlus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-
-// Modul untuk menangani penyimpanan file fisik ke server
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 
 async function registerUser(formData: FormData) {
   "use server";
@@ -16,13 +12,13 @@ async function registerUser(formData: FormData) {
   const gradeInput = formData.get("class") as string; 
   const email = formData.get("email") as string;
   const phone = formData.get("phone") as string;
-  const address = formData.get("address") as string; // <-- Tangkap Alamat Lengkap
+  const address = formData.get("address") as string;
   const password = formData.get("password") as string;
   const file = formData.get("profilePhoto") as File; 
 
   if (!name || !email || !phone || !password) return;
 
-  // 1. Daftarkan akun ke Supabase Auth terlebih dahulu agar mengirim verifikasi email
+  // 1. Daftarkan akun ke Supabase Auth agar memicu pengiriman email verifikasi
   const supabase = await createClient();
   const { error: authError } = await supabase.auth.signUp({
     email,
@@ -41,37 +37,49 @@ async function registerUser(formData: FormData) {
 
   let imageUrl = null;
 
-  // 2. Logika Penyimpanan File Foto Profil Siswa (Opsional)
-  if (file && file.size > 0) {
+  // 2. Upload foto profil siswa ke Supabase Storage (Bypass EROFS Vercel)
+  if (file && typeof file !== "string" && file.size > 0) {
     try {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
+      const supabaseAdmin = createSupabaseAdmin(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
 
-      const uploadDir = join(process.cwd(), "public/uploads");
-      if (!existsSync(uploadDir)) {
-        await mkdir(uploadDir, { recursive: true });
-      }
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
       const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      const extension = file.name.split(".").pop();
+      const extension = file.name ? file.name.split(".").pop() : "jpg";
       const fileName = `user-${uniqueSuffix}.${extension}`;
-      const filePath = join(uploadDir, fileName);
 
-      await writeFile(filePath, buffer);
-      imageUrl = `/uploads/${fileName}`;
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("bukti-transfer") // Menggunakan bucket yang sama atau buat bucket khusus 'avatars'
+        .upload(fileName, buffer, {
+          contentType: file.type || "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (!uploadError) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from("bukti-transfer")
+          .getPublicUrl(fileName);
+
+        imageUrl = publicUrlData.publicUrl;
+      }
     } catch (error) {
-      console.error("Gagal mengunggah foto profil siswa:", error);
+      console.error("Gagal mengunggah foto profil siswa ke Supabase:", error);
     }
   }
 
   try {
-    // 3. Simpan data user ke database Prisma beserta Alamat, SEKALIGUS buat data StudentProfile-nya
+    // 3. Simpan data user ke database Prisma beserta profil siswa
     await prisma.user.create({
       data: {
         name,
         email,
         phone,
-        address,      // <-- Masukkan ke database
+        address,      
         password_hash: password, 
         role: "STUDENT", 
         image_url: imageUrl,
@@ -91,7 +99,7 @@ async function registerUser(formData: FormData) {
     throw error;
   }
 
-  // 4. Setelah daftar, arahkan ke halaman pemberitahuan agar siswa mengecek email verifikasi
+  // 4. Arahkan ke halaman login dengan parameter pemberitahuan cek email
   redirect("/login?message=check_email_verification");
 }
 
