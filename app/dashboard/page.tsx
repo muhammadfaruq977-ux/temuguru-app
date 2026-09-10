@@ -11,10 +11,8 @@ import SidebarMenu from "@/components/SidebarMenu";
 // IMPORT FUNGSI PENGIRIM NOTIFIKASI
 import { sendPushNotification } from "@/lib/send-push";
 
-// WAJIB IMPORT INI UNTUK MENYIMPAN FILE KE SERVER
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
+// IMPORT SUPABASE UNTUK STORAGE (MENGGANTIKAN fs/promises KARENA VERCEL)
+import { createClient } from "@supabase/supabase-js";
 
 async function handleLogout() {
   "use server";
@@ -23,46 +21,57 @@ async function handleLogout() {
   redirect("/login");
 }
 
-// FUNGSI UPLOAD BUKTI PEMBAYARAN (SUDAH DIPERBAIKI ANTI-CRASH & ANTI-SILENT FAIL)
+// FUNGSI UPLOAD BUKTI KE SUPABASE STORAGE (COCOK UNTUK VERCEL)
 async function uploadProof(formData: FormData) {
   "use server";
+  
   const bookingId = formData.get("bookingId") as string;
   const file = formData.get("proofImage") as File; 
   
-  // PERBAIKAN 1: Jangan gunakan 'return' diam-diam. Gunakan redirect agar tahu jika file ditolak.
   if (!bookingId || !file || typeof file === "string" || file.size === 0) {
     redirect("/dashboard?error=file_invalid_atau_kosong");
   }
 
   let fileUrl = "";
 
-  // 1. Coba proses dan simpan file fisik
   try {
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    // 1. Inisialisasi Supabase Client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
-    // Gunakan pemisah OS yang aman
-    const uploadDir = join(process.cwd(), "public", "uploads");
-
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
-    }
-
+    // 2. Siapkan File untuk Upload
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     const extension = file.name ? file.name.split(".").pop() : "jpg";
     const fileName = `bukti-${uniqueSuffix}.${extension}`;
     
-    const filePath = join(uploadDir, fileName);
-    await writeFile(filePath, buffer);
+    // 3. Upload File ke Supabase Storage (Bucket: bukti-transfer)
+    const { data, error } = await supabase.storage
+      .from("bukti-transfer")
+      .upload(fileName, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
 
-    fileUrl = `/uploads/${fileName}`;
+    if (error) {
+      console.error("Gagal upload ke Supabase:", error.message);
+      redirect("/dashboard?error=gagal_upload_storage");
+    }
+
+    // 4. Dapatkan URL Publik
+    const { data: publicUrlData } = supabase.storage
+      .from("bukti-transfer")
+      .getPublicUrl(fileName);
+
+    fileUrl = publicUrlData.publicUrl;
+
   } catch (error) {
-    console.error("Gagal menyimpan file gambar ke server:", error);
-    // PERBAIKAN 2: Jangan gunakan 'return'. Arahkan ke error sistem agar tidak macet di form.
-    redirect("/dashboard?error=gagal_menyimpan_ke_folder");
+    console.error("Error internal saat upload:", error);
+    redirect("/dashboard?error=server_error_upload");
   }
 
-  // 2. Coba update database dan kirim notifikasi
+  // 5. Update Database dengan URL Publik Supabase
   try {
     await prisma.booking.update({
       where: { id: bookingId },
@@ -86,7 +95,7 @@ async function uploadProof(formData: FormData) {
     console.error("Gagal update database atau kirim notif admin:", error);
   }
 
-  // Wajib revalidatePath dan redirect DI LUAR blok try-catch agar fungsi pindah halaman tidak error
+  // 6. Selesai
   revalidatePath("/dashboard");
   revalidatePath("/admin/bookings");
   redirect("/dashboard");
@@ -320,7 +329,8 @@ export default async function StudentDashboardPage() {
         ) : (
           <div className="grid grid-cols-1 gap-6">
             {user.bookings.map((booking) => {
-              const hasProofImage = booking.location_notes && booking.location_notes.startsWith("/uploads/");
+              // DETEKSI URL SUPABASE
+              const hasProofImage = booking.location_notes && (booking.location_notes.startsWith("http") || booking.location_notes.startsWith("/uploads/"));
               const isSessionActive = booking.status === "SCHEDULED" || booking.status === "PAYMENT_SUCCESS" || booking.status === "TUTOR_CONFIRMED";
 
               return (
@@ -400,8 +410,7 @@ export default async function StudentDashboardPage() {
                           </div>
                         </div>
 
-                        {/* PERBAIKAN 3: Hapus encType agar Next.js bisa menginisialisasi form handling secara otomatis tanpa konflik */}
-                        <form action={uploadProof} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center gap-3">
+                        <form action={uploadProof} encType="multipart/form-data" className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center gap-3">
                           <input type="hidden" name="bookingId" value={booking.id} />
                           <div className="flex-1 w-full space-y-1.5">
                             <label className="text-xs font-black text-slate-700 uppercase tracking-wider block">Upload Bukti Transfer Pembayaran</label>
